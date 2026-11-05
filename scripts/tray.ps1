@@ -11,7 +11,7 @@ $statusFile = Join-Path $root 'status.txt'
 if (!(Test-Path -LiteralPath $executable)) { exit 2 }
 
 $created = $false
-$mutex = New-Object System.Threading.Mutex($true, 'Local\Hi5JPEGWebRTCTray', [ref]$created)
+$mutex = [System.Threading.Mutex]::new($true, 'Local\Hi5JPEGWebRTCTray', [ref]$created)
 if (!$created) { $mutex.Dispose(); exit 0 }
 
 $context = New-Object System.Windows.Forms.ApplicationContext

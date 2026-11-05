@@ -1,13 +1,20 @@
 # Hi5Central JPEG-over-WebRTC
 
-Standalone **view-only** screen-sharing prototype. Separate from Hi5Central RMM and ITSM.
+Standalone **view-only** Windows screen-sharing experiment, separate from the main Hi5Central RMM agent/viewer.
 
-A portable Windows user-mode EXE captures the logged-in desktop and JPEG-encodes frames. JPEG chunks are carried over an encrypted WebRTC DataChannel, then displayed by a browser canvas. A small Go signalling relay issues short-lived viewing links and can issue temporary coturn TURN credentials.
+- **Portable Windows EXE:** ordinary user-mode desktop capture with GDI, JPEG encoding, encrypted WebRTC DataChannel; no administrator rights, installation, service or driver.
+- **Browser viewer:** built-in HTML canvas with JPEG reconstruction and FPS/bitrate counter.
+- **IONOS VPS relay:** small Go signalling process behind the existing Hi5Central Caddy HTTPS gateway. Direct WebRTC is preferred; the existing coturn service can optionally relay traffic if direct ICE fails.
+- **GitHub Actions:** Windows portable EXE and Linux AMD64/ARM64 binaries.
 
-No admin rights, installation, service, driver or inbound Windows port required on the Windows side. The EXE must remain running and visible to share. No remote control or unattended access.
+The standalone viewing URL is created by the sender and should only be shared with an intended viewer. The sender must be running and a normal interactive desktop must be available. Viewer is **view-only** (no mouse/keyboard input).
 
-This is an experimental build, **not production-hardened**. Do not expose raw HTTP. Deploy the signalling relay behind HTTPS and provide access to consented users only.
+**Experimental proof of concept, not production-hardened.** Use consented test sessions only. Links expire for new connections after 10 minutes, but established sessions persist while the sender stays connected. Screen sharing stops when the sender exits. Stronger authentication, rate limiting, logging and signing would be required for a wider release.
 
-Use the GitHub Actions workflow to build a Windows portable EXE and Linux relay for x64 and Oracle Ampere ARM64.
+## Build
 
-See `deploy/oracle/README.md` for deployment instructions.
+GitHub Actions builds on push. Download `hi5-jpeg-webrtc-standalone` under the latest green Actions workflow.
+
+Run `Hi5-JPEG-ScreenShare.exe -server https://jpeg.hi5central.com` as an ordinary Windows user. A browser viewing URL is printed in the application.
+
+For the IONOS deployment see [deploy/ionos/README.md](deploy/ionos/README.md). The server is optional for local builds but required for internet sessions.

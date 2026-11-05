@@ -1,0 +1,8 @@
+# Paste inside the CURRENT *.hi5central.com, hi5central.com site,
+# BEFORE the final catch-all handle. Do NOT replace Caddyfile.
+# H5C_JPEG_RELAY_BEGIN
+@jpegRelayHost host jpeg.hi5central.com
+handle @jpegRelayHost {
+  reverse_proxy hi5central-jpeg-relay:8787
+}
+# H5C_JPEG_RELAY_END

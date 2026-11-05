@@ -19,9 +19,13 @@ jobs:
         run: go mod tidy
       - name: Test
         run: go test ./...
-      - name: Build Windows user-mode EXE
+      - name: Check browser viewer JavaScript
+        run: |
+          sed -n '/<script>/,/<\/script>/p' web/index.html | sed '1d;$d' > /tmp/hi5-jpeg-viewer.js
+          node --check /tmp/hi5-jpeg-viewer.js
+      - name: Build portable Windows EXE
         run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o Hi5-JPEG-ScreenShare.exe ./cmd/agent
-      - name: Build Oracle Linux relays
+      - name: Build Linux IONOS relay
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o jpeg-relay-linux-amd64 ./cmd/relay
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o jpeg-relay-linux-arm64 ./cmd/relay

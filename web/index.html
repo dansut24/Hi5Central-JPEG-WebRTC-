@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Hi5Central JPEG WebRTC Viewer</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif}
+body{background:#0d1320;color:#edf2fa;margin:0;min-height:100vh}
+header{display:flex;gap:14px;align-items:center;justify-content:space-between;padding:16px 22px;background:#182236;border-bottom:1px solid #324258;flex-wrap:wrap}
+h1{font-size:18px;margin:0}small{color:#a2b6d2}#status{color:#c7d9fa;font-size:14px}#stats{color:#9db3d5;font-size:13px}
+main{margin:20px auto;width:calc(100% - 40px);max-width:1600px}
+#screen{display:block;width:100%;height:auto;background:#060910;object-fit:contain;border-radius:12px;border:1px solid #34425a;max-height:calc(100vh - 140px)}
+#info{color:#a2b6d2;line-height:1.6;margin:14px 0}#status:before{content:'● ';color:#ffb44b}
+body.connected #status:before{color:#48d997}
+</style>
+</head>
+<body>
+<header><div><h1>Hi5Central | JPEG WebRTC Viewer</h1><small>View only • Encrypted connection • JPEG over DataChannel</small></div><div><div id="status">Waiting to connect…</div><div id="stats">0 FPS · 0 kbps</div></div></header>
+<main><canvas id="screen" width="1280" height="720" aria-label="Remote screen"></canvas><p id="info">The screen appears when the Windows user starts sharing and opens this private link. Close the Windows application to stop sharing.</p></main>
+<script>
+(() => {
+'use strict';
+const statusEl=document.getElementById('status'),statsEl=document.getElementById('stats'),canvas=document.getElementById('screen');
+const ctx=canvas.getContext('2d',{alpha:false,desynchronized:true});
+const query=new URLSearchParams(location.search),room=query.get('room'),key=query.get('key');
+const status=(text,connected=false)=>{statusEl.textContent=text;document.body.classList.toggle('connected',connected)};
+if(!room||!key){status('Invalid link: room and key are required');return}
+let ws,pc,dc,rendered=0,bytes=0,lastFrame=-1,renderGeneration=0,lastStats=performance.now();
+const frames=new Map();
+const closePC=()=>{if(dc){try{dc.close()}catch{}}if(pc){try{pc.close()}catch{}}pc=null;dc=null;frames.clear()};
+const receivePacket=async buffer=>{
+ if(!(buffer instanceof ArrayBuffer)||buffer.byteLength<12)return;
+ const view=new DataView(buffer);
+ const id=view.getUint32(0,true),index=view.getUint16(4,true),count=view.getUint16(6,true),length=view.getUint32(8,true);
+ if(count===0||count>300||index>=count||length<=0||length>3*1024*1024)return;
+ if(lastFrame>=0&&id<=lastFrame)return;
+ let frame=frames.get(id);
+ if(!frame){frame={parts:new Array(count),size:0,received:0,created:performance.now(),length};frames.set(id,frame)}
+ if(frame.length!==length||frame.parts.length!==count||frame.parts[index])return;
+ frame.parts[index]=new Uint8Array(buffer,12);frame.size+=buffer.byteLength-12;frame.received++;
+ for(const [oldId,item] of frames)if(oldId<id-3||performance.now()-item.created>1500)frames.delete(oldId);
+ if(frame.received!==count)return;
+ frames.delete(id);
+ if(frame.size!==length)return;
+ // Drop stale decoded frames rather than displaying them out of order.
+ const blob=new Blob(frame.parts,{type:'image/jpeg'});
+ const generation=renderGeneration;
+ try{
+  const bitmap=await createImageBitmap(blob);
+  if(generation===renderGeneration&&id>lastFrame){
+   canvas.width=bitmap.width;canvas.height=bitmap.height;
+   ctx.drawImage(bitmap,0,0);lastFrame=id;rendered++;bytes+=length;
+  }
+  bitmap.close();
+ }catch(e){console.debug('JPEG decode dropped',e)}
+};
+const makeOffer=async()=>{
+ const response=await fetch('/api/ice?'+new URLSearchParams({room,key}),{cache:'no-store'});
+ if(!response.ok)throw Error('Unable to obtain WebRTC ICE servers');
+ const config=await response.json();
+ pc=new RTCPeerConnection(config);
+ pc.onconnectionstatechange=()=>{
+  if(!pc)return;
+  if(pc.connectionState==='failed'||pc.connectionState==='closed')status('WebRTC connection ended');
+  if(pc.connectionState==='connected')status('Receiving JPEG screen…',true);
+ };
+ dc=pc.createDataChannel('jpeg',{ordered:true});
+ dc.binaryType='arraybuffer';
+ dc.onopen=()=>status('Receiving JPEG screen…',true);
+ dc.onclose=()=>status('DataChannel closed');
+ dc.onmessage=ev=>{void receivePacket(ev.data)};
+ const offer=await pc.createOffer();await pc.setLocalDescription(offer);
+ await Promise.race([new Promise(resolve=>{
+  if(pc.iceGatheringState==='complete'){resolve();return}
+  pc.addEventListener('icegatheringstatechange',()=>{if(pc.iceGatheringState==='complete')resolve()});
+ }),new Promise(resolve=>setTimeout(resolve,20000))]);
+ if(ws?.readyState!==WebSocket.OPEN)throw Error('Signalling disconnected');
+ ws.send(JSON.stringify({type:'offer',sdp:pc.localDescription.sdp}));
+};
+const open=()=>{
+ const endpoint=new URL('/ws',location.origin);
+ endpoint.protocol=endpoint.protocol==='https:'?'wss:':'ws:';
+ endpoint.search=new URLSearchParams({role:'viewer',room,key}).toString();
+ ws=new WebSocket(endpoint);
+ ws.onopen=()=>status('Connected to signalling; waiting for agent…');
+ ws.onmessage=async ev=>{
+  let msg;try{msg=JSON.parse(ev.data)}catch{return}
+  if(msg.type==='ready'){
+   status('Negotiating secure WebRTC…');closePC();renderGeneration++;lastFrame=-1;
+   try{await makeOffer()}catch(e){status('Connection failed: '+e.message)}
+  } else if(msg.type==='answer'&&pc){
+   try{await pc.setRemoteDescription({type:'answer',sdp:msg.sdp})}catch(e){status('Invalid WebRTC answer: '+e.message)}
+  } else if(msg.type==='peer-left'){
+   closePC();status('Sharing stopped by Windows user');
+  }
+ };
+ ws.onclose=()=>{closePC();status('Session expired or disconnected')};
+ ws.onerror=()=>status('Unable to connect to signalling');
+};
+setInterval(()=>{
+ const now=performance.now(),seconds=(now-lastStats)/1000;
+ if(seconds<=0)return;
+ statsEl.textContent=Math.round(rendered/seconds)+' FPS · '+Math.round(bytes*8/seconds/1000)+' kbps'+(canvas.width?' · '+canvas.width+'×'+canvas.height:'');
+ rendered=bytes=0;lastStats=now;
+},2000);
+window.addEventListener('beforeunload',()=>{ws?.close();closePC()});
+open();
+})();
+</script>
+</body></html>

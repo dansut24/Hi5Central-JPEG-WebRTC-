@@ -53,7 +53,7 @@ func TestPortalAuthenticationAndDeviceWatch(t *testing.T) {
  if result.Code!=200{t.Fatalf("watch HTTP %d: %s",result.Code,result.Body.String())}
  var link struct{URL string `json:"url"`}
  if err:=json.Unmarshal(result.Body.Bytes(),&link);err!=nil{t.Fatal(err)}
- if !strings.HasPrefix(link.URL,"/?room="){t.Fatalf("unexpected watch link %q",link.URL)}
+ if !strings.HasPrefix(link.URL,"/?")||!strings.Contains(link.URL,"room="+id){t.Fatalf("unexpected watch link %q",link.URL)}
  request:=httptest.NewRequest("GET","https://jpeg.hi5central.com"+link.URL,nil)
  if _,err:=s.findRoom(request.URL.Query().Get("room"),request.URL.Query().Get("key"));err!=nil{t.Fatalf("portal capability not recognized: %v",err)}
  other:=httptest.NewRecorder()

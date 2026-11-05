@@ -61,8 +61,10 @@ const row = (entry)=>{
    });
    if(!result.ok)throw Error(result.status===409?'Device is already being viewed.':'Unable to create viewing session ('+result.status+').');
    const data=await result.json();
-   if(typeof data.url!=='string'||!data.url.startsWith('/?room='))throw Error('Invalid viewing link');
-   window.location.assign(data.url);
+   if(typeof data.url!=='string'||!data.url.startsWith('/?'))throw Error('Invalid viewing link');
+   const next=new URL(data.url,location.origin);
+   if(next.origin!==location.origin||next.pathname!=='/'||!next.searchParams.get('room')||!next.searchParams.get('key'))throw Error('Invalid viewing link');
+   window.location.assign(next.pathname+next.search);
   }catch(err){message.textContent=err.message;button.disabled=false;button.textContent='View'}
  };
  copy.append(title,subtitle);item.append(copy,button);return item;

@@ -1,44 +1,64 @@
-# Install the JPEG screen-sharing agent for the CURRENT USER without elevation.
-# Run after extracting the successful GitHub Actions ZIP containing the EXE and this script.
-# By installing, you opt in to a visible background agent that starts on sign-in.
+# Hi5Central JPEG WebRTC - no-elevation current-user installer.
+# Running this script enables view-only screen sharing from the authorised
+# web portal while this Windows user is signed in. An active stream is visibly
+# indicated in the system tray, where the user can Pause or Exit at any time.
 [CmdletBinding()]
-param([switch]$AcceptUnattendedSharing)
+param()
 $ErrorActionPreference = 'Stop'
 $root = Join-Path $env:LOCALAPPDATA 'Hi5Central\JPEGWebRTC'
-$source = Join-Path (Split-Path -Parent $PSScriptRoot) 'Hi5-JPEG-ScreenShare-GUI.exe'
-$traySource = Join-Path $PSScriptRoot 'tray.ps1'
-if (!(Test-Path -LiteralPath $source)) { throw 'Missing Hi5-JPEG-ScreenShare-GUI.exe. Extract the complete release ZIP before installing.' }
-if (!(Test-Path -LiteralPath $traySource)) { throw 'Missing scripts/tray.ps1. Extract the complete release ZIP before installing.' }
+$sourceRoot = Split-Path -Parent $PSScriptRoot
+$sourceExe = Join-Path $sourceRoot 'Hi5-JPEG-ScreenShare-GUI.exe'
+$sourceTray = Join-Path $PSScriptRoot 'tray.ps1'
+$sourceUninstall = Join-Path $PSScriptRoot 'uninstall-user.ps1'
+$stage = Join-Path $env:TEMP ('Hi5JPEG-' + [guid]::NewGuid().ToString('N'))
+$exeName = 'Hi5-JPEG-ScreenShare-GUI.exe'
+$trayName = 'tray.ps1'
+$uninstallName = 'uninstall-user.ps1'
 
-Write-Host ''
-Write-Host 'Hi5Central JPEG user-mode screen sharing' -ForegroundColor Cyan
-Write-Host '-----------------------------------------'
-Write-Host 'Installs only for your Windows account; no administrator rights required.'
-Write-Host 'Starts at each sign-in and stays in the notification area.'
-Write-Host 'An authenticated portal operator may view the signed-in desktop'
-Write-Host 'without an additional per-session approval prompt.'
-Write-Host 'The local user can pause or exit it from the tray at any time.'
-Write-Host ''
-if (!$AcceptUnattendedSharing) {
-    $answer = Read-Host 'Type INSTALL to confirm informed consent'
-    if ($answer -cne 'INSTALL') { throw 'Installation cancelled.' }
+if (!(Test-Path -LiteralPath $sourceExe)) {
+    throw 'Missing agent EXE. Extract the complete GitHub Actions ZIP before running Install-User.cmd.'
 }
+if (!(Test-Path -LiteralPath $sourceTray) -or !(Test-Path -LiteralPath $sourceUninstall)) {
+    throw 'Missing installer support scripts. Extract the complete ZIP.'
+}
+try {
+    New-Item -Path $stage -ItemType Directory -Force | Out-Null
+    Copy-Item -LiteralPath $sourceExe -Destination (Join-Path $stage $exeName) -Force
+    Copy-Item -LiteralPath $sourceTray -Destination (Join-Path $stage $trayName) -Force
+    Copy-Item -LiteralPath $sourceUninstall -Destination (Join-Path $stage $uninstallName) -Force
 
-New-Item -Path $root -ItemType Directory -Force | Out-Null
-Copy-Item -LiteralPath $source -Destination (Join-Path $root 'Hi5-JPEG-ScreenShare-GUI.exe') -Force
-Copy-Item -LiteralPath $traySource -Destination (Join-Path $root 'tray.ps1') -Force
+    # Safe upgrade: stop only this user's exact installed agent and tray paths.
+    $oldExe = Join-Path $root $exeName
+    $oldTray = Join-Path $root $trayName
+    Get-CimInstance Win32_Process -Filter "Name='Hi5-JPEG-ScreenShare-GUI.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.ExecutablePath -eq $oldExe } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and $_.CommandLine.Contains($oldTray) } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Milliseconds 500
 
-$run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-New-Item -Path $run -Force | Out-Null
-$startup = 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + (Join-Path $root 'tray.ps1') + '"'
-New-ItemProperty -Path $run -Name 'Hi5JPEGWebRTCTray' -Value $startup -PropertyType String -Force | Out-Null
+    New-Item -Path $root -ItemType Directory -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $stage $exeName) -Destination $oldExe -Force
+    Copy-Item -LiteralPath (Join-Path $stage $trayName) -Destination $oldTray -Force
+    Copy-Item -LiteralPath (Join-Path $stage $uninstallName) -Destination (Join-Path $root $uninstallName) -Force
 
-Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @(
-    '-NoProfile','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File',
-    ('"' + (Join-Path $root 'tray.ps1') + '"')
-)
-Write-Host ''
-Write-Host ('Installed to: ' + $root) -ForegroundColor Green
-Write-Host 'Starting tray icon. Look in the notification area (^ icon).'
-Write-Host 'Portal: https://jpeg.hi5central.com/portal'
-Write-Host 'Remove this application using scripts\uninstall-user.ps1.'
+    # Current-user sign-in startup only. No service, admin prompt, or scheduled task.
+    $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    New-Item -Path $run -Force | Out-Null
+    $startCommand = 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $oldTray + '"'
+    New-ItemProperty -Path $run -Name 'Hi5JPEGWebRTCTray' -PropertyType String -Value $startCommand -Force | Out-Null
+
+    # Launch the visible notification-area controller, not a console.
+    Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @(
+       '-NoProfile','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File',
+       ('"' + $oldTray + '"')
+    )
+    Write-Host 'Hi5Central JPEG installed for the signed-in Windows user.' -ForegroundColor Green
+    Write-Host 'The notification-area icon shows sharing status, and Pause/Exit stops sharing.'
+    Write-Host 'Device portal: https://jpeg.hi5central.com/portal'
+} finally {
+    if (Test-Path -LiteralPath $stage) {
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}

@@ -49,23 +49,25 @@ const row = (entry)=>{
  const item=document.createElement('div');item.className='device';
  const copy=document.createElement('div'),title=document.createElement('h3'),subtitle=document.createElement('small'),button=document.createElement('button');
  title.textContent=entry.name;subtitle.textContent=entry.viewing?'Currently being viewed':'Online · Ready to view';
- button.textContent='View';button.disabled=entry.viewing;
- button.setAttribute('aria-label','View screen of '+entry.name);
+ button.textContent=entry.viewing?'Stop stream':'View';
+ button.setAttribute('aria-label',(entry.viewing?'Stop stream for ':'View screen of ')+entry.name);
  button.onclick=async()=>{
-  button.disabled=true;button.textContent='Connecting…';message.textContent='';
+  button.disabled=true;button.textContent=entry.viewing?'Stopping…':'Connecting…';message.textContent='';
   try{
-   const result=await fetch('/api/portal/watch',{
+   const result=await fetch(entry.viewing?'/api/portal/stop':'/api/portal/watch',{
     method:'POST',credentials:'same-origin',
     headers:{'Content-Type':'application/json','X-H5C-Portal':'1'},
     body:JSON.stringify({room:entry.room})
    });
-   if(!result.ok)throw Error(result.status===409?'Device is already being viewed.':'Unable to create viewing session ('+result.status+').');
+   if(!result.ok)throw Error(entry.viewing?'Unable to stop stream ('+result.status+').':
+    result.status===409?'Device is already being viewed.':'Unable to create viewing session ('+result.status+').');
+   if(entry.viewing){message.textContent='Viewer disconnected. The computer remains online.';await refresh();return}
    const data=await result.json();
    if(typeof data.url!=='string'||!data.url.startsWith('/?'))throw Error('Invalid viewing link');
    const next=new URL(data.url,location.origin);
    if(next.origin!==location.origin||next.pathname!=='/'||!next.searchParams.get('room')||!next.searchParams.get('key'))throw Error('Invalid viewing link');
    window.location.assign(next.pathname+next.search);
-  }catch(err){message.textContent=err.message;button.disabled=false;button.textContent='View'}
+  }catch(err){message.textContent=err.message;button.disabled=false;button.textContent=entry.viewing?'Stop stream':'View'}
  };
  copy.append(title,subtitle);item.append(copy,button);return item;
 };

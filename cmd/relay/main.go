@@ -142,6 +142,33 @@ func(s *relay) portalWatch(w http.ResponseWriter,r *http.Request){
  q:=url.Values{};q.Set("room",request.Room);q.Set("key",key)
  _ = json.NewEncoder(w).Encode(map[string]any{"url":"/?"+q.Encode(),"expiresInSeconds":120})
 }
+// Portal operators can stop an active viewing session, without disabling device registration.
+// The Windows user also retains their local tray Stop/Exit controls.
+func(s *relay) portalStop(w http.ResponseWriter,r *http.Request){
+ if !s.portalAuth(w,r){return}
+ if r.Method!="POST"{http.Error(w,"Method not allowed",http.StatusMethodNotAllowed);return}
+ origin:=r.Header.Get("Origin")
+ if (origin!="https://"+r.Host&&origin!="http://"+r.Host)||r.Header.Get("X-H5C-Portal")!="1"{
+  http.Error(w,"Forbidden origin",http.StatusForbidden);return
+ }
+ var request struct{Room string `json:"room"`}
+ decoder:=json.NewDecoder(http.MaxBytesReader(w,r.Body,512))
+ decoder.DisallowUnknownFields()
+ if decoder.Decode(&request)!=nil||!validToken(request.Room,12){
+  http.Error(w,"Invalid request",http.StatusBadRequest);return
+ }
+ s.mu.Lock()
+ current:=s.rooms[request.Room]
+ var viewer *peer
+ if current!=nil{viewer=current.viewer}
+ s.mu.Unlock()
+ if viewer==nil{http.Error(w,"No active viewer",http.StatusConflict);return}
+ // Closing the viewer socket causes the existing peer-left cleanup path to run.
+ // No attempt is made to terminate the user's local session or suppress its tray indicator.
+ _ = viewer.conn.Close()
+ w.Header().Set("Cache-Control","no-store")
+ w.WriteHeader(http.StatusNoContent)
+}
 func(s *relay) portalPage(w http.ResponseWriter,r *http.Request){
  if r.URL.Path!="/portal"{http.NotFound(w,r);return}
  if !s.portalAuth(w,r){return}
@@ -268,6 +295,7 @@ func main(){
  mux.HandleFunc("/api/ice",s.ice)
  mux.HandleFunc("/api/portal/devices",s.portalDevices)
  mux.HandleFunc("/api/portal/watch",s.portalWatch)
+ mux.HandleFunc("/api/portal/stop",s.portalStop)
  mux.HandleFunc("/portal",s.portalPage)
  mux.HandleFunc("/",func(w http.ResponseWriter,r *http.Request){
   if r.URL.Path!="/"{http.NotFound(w,r);return}

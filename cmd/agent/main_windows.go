@@ -18,6 +18,7 @@ import (
  "net/url"
  "os"
  "os/signal"
+ "path/filepath"
  "strings"
  "sync"
  "time"
@@ -27,6 +28,24 @@ import (
 )
 
 var defaultServer = "https://jpeg.hi5central.com"
+var guiBuild = "0"
+
+func appDir() string{
+ base:=os.Getenv("LOCALAPPDATA")
+ if base=="" {base=os.TempDir()}
+ return filepath.Join(base,"Hi5Central","JPEGWebRTC")
+}
+func agentStatus(status string){
+ dir:=appDir()
+ if err:=os.MkdirAll(dir,0700);err==nil {
+   _ = os.WriteFile(filepath.Join(dir,"status.txt"),[]byte(status+"\n"),0600)
+ }
+}
+func agentLog() {
+ if err:=os.MkdirAll(appDir(),0700);err!=nil{return}
+ file,err:=os.OpenFile(filepath.Join(appDir(),"agent.log"),os.O_CREATE|os.O_WRONLY|os.O_APPEND,0600)
+ if err==nil{log.SetOutput(file)}
+}
 type settings struct {FPS,Width,Quality int}
 type message struct {Type string `json:"type"`; SDP string `json:"sdp,omitempty"`}
 type wsClient struct {c *websocket.Conn;mu sync.Mutex}
@@ -79,12 +98,18 @@ func stream(dc *webrtc.DataChannel,stopped <-chan struct{},cfg settings){
 }
 func peerConnection(ice []webrtc.ICEServer,cfg settings)(*webrtc.PeerConnection,error){
  pc,err:=webrtc.NewPeerConnection(webrtc.Configuration{ICEServers:ice});if err!=nil{return nil,err}
- pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState){log.Printf("WebRTC: %s",s.String())})
+ pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState){
+  log.Printf("WebRTC: %s",s.String())
+  if s==webrtc.PeerConnectionStateFailed||s==webrtc.PeerConnectionStateDisconnected||s==webrtc.PeerConnectionStateClosed {
+    agentStatus("ready")
+  }
+ })
  pc.OnDataChannel(func(dc *webrtc.DataChannel){
   if dc.Label()!="jpeg"{_ = dc.Close();return}
   stopped:=make(chan struct{});var once sync.Once
   stop:=func(){once.Do(func(){close(stopped)})}
-  dc.OnClose(stop);dc.OnOpen(func(){go stream(dc,stopped,cfg)})
+  dc.OnClose(func(){stop();agentStatus("ready")})
+  dc.OnOpen(func(){agentStatus("streaming");go stream(dc,stopped,cfg)})
  })
  return pc,nil
 }
@@ -117,6 +142,7 @@ func run()error{
  target.Path="/ws";q:=url.Values{};q.Set("role","agent");q.Set("room",room);q.Set("key",key);q.Set("device",deviceName);target.RawQuery=q.Encode()
  conn,_,err:=websocket.DefaultDialer.Dial(target.String(),nil);if err!=nil{return fmt.Errorf("signalling connection: %w",err)}
  defer conn.Close();ws:=&wsClient{c:conn}
+ defer agentStatus("offline")
  fmt.Println("\n=== Hi5Central JPEG screen share ===")
  fmt.Println("VIEW ONLY. This window is sharing-enabled. Close it to stop.")
  fmt.Println("Device: "+deviceName)
@@ -133,10 +159,10 @@ func run()error{
   _,raw,err:=conn.ReadMessage();if err!=nil{return fmt.Errorf("signalling disconnected: %w",err)}
   var msg message;if json.Unmarshal(raw,&msg)!=nil{continue}
   switch msg.Type{
-  case "registered":log.Println("Waiting for a browser viewer.")
+  case "registered":agentStatus("ready");log.Println("Waiting for a browser viewer.")
   case "ready":log.Println("Browser connected.")
   case "peer-left":
-   if active!=nil{_ = active.Close();active=nil};log.Println("Viewer disconnected.")
+   if active!=nil{_ = active.Close();active=nil};agentStatus("ready");log.Println("Viewer disconnected.")
   case "offer":
    if active!=nil{_ = active.Close();active=nil}
    pc,err:=peerConnection(ice,cfg);if err!=nil{return err};active=pc
@@ -152,6 +178,12 @@ func run()error{
  }
 }
 func main(){
- log.SetFlags(log.Ltime|log.Lmicroseconds)
- if err:=run();err!=nil{log.Printf("Stopped: %v",err);fmt.Println("Press Enter to close...");fmt.Scanln()}
+ log.SetFlags(log.Ldate|log.Ltime|log.Lmicroseconds)
+ if guiBuild=="1"{agentLog()}
+ agentStatus("connecting")
+ if err:=run();err!=nil{
+  agentStatus("offline")
+  log.Printf("Stopped: %v",err)
+  if guiBuild!="1"{fmt.Println("Press Enter to close...");fmt.Scanln()}
+ }
 }

@@ -3,6 +3,8 @@
 This uses the existing VPS running `hi5central-gateway-1` (Caddy wildcard TLS) and `hi5central-turn-1` (coturn).
 **Do not restart, replace or update the Hi5Central gateway, TURN service, RMM API, or their Compose file.**
 
+The device portal is available at `https://jpeg.hi5central.com/portal` and requires the restricted `PORTAL_USER` and `PORTAL_PASSWORD` variables on the relay. `PORTAL_PASSWORD` must be at least 16 characters; keep it out of source control. Configure it in `/etc/hi5-jpeg-relay.env` alongside `TURN_SECRET`.
+
 The new relay is an independent Docker container on the existing `hi5central-internal` Docker network.
 It does not publish ports on the VPS; Caddy forwards `https://jpeg.hi5central.com` to `hi5central-jpeg-relay:8787`.
 
@@ -50,7 +52,7 @@ Test `https://jpeg.hi5central.com/` and make a disposable private session.
 
 Set `STUN_URL`, `TURN_URL`, `TURN_SECRET` on the new relay to point at existing Hi5Central coturn **only after confirming it supports REST/shared-secret temporary TURN credentials** and identifying its public hostname/port. Do not change the TURN container or credentials while testing. Without these variables, browsers will try direct WebRTC using the default STUN server; restrictive networks may fail to connect.
 
-The relay does not proxy JPEG frames itself: Pion and the browser communicate directly when ICE permits. For blocked direct paths, TURN relays the encrypted WebRTC traffic through the VPS. TURN bandwidth is therefore charged to the VPS.
+Device names are listed only in the authenticated portal; a portal View action grants a short-lived, device-specific viewer capability. The relay does not proxy JPEG frames itself: Pion and the browser communicate directly when ICE permits. For blocked direct paths, TURN relays the encrypted WebRTC traffic through the VPS. TURN bandwidth is therefore charged to the VPS.
 
 ## Stop/rollback
 

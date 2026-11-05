@@ -23,6 +23,8 @@ jobs:
         run: |
           sed -n '/<script>/,/<\/script>/p' web/index.html | sed '1d;$d' > /tmp/hi5-jpeg-viewer.js
           node --check /tmp/hi5-jpeg-viewer.js
+          sed -n '/<script>/,/<\\/script>/p' web/portal.html | sed '1d;$d' > /tmp/hi5-jpeg-portal.js
+          node --check /tmp/hi5-jpeg-portal.js
       - name: Build portable Windows EXE
         run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o Hi5-JPEG-ScreenShare.exe ./cmd/agent
       - name: Build Linux IONOS relay
@@ -33,7 +35,7 @@ jobs:
         run: |
           mkdir -p dist/web
           cp Hi5-JPEG-ScreenShare.exe jpeg-relay-linux-amd64 jpeg-relay-linux-arm64 README.md dist/
-          cp web/index.html dist/web/
+          cp web/index.html web/portal.html dist/web/
       - uses: actions/upload-artifact@v4
         with:
           name: hi5-jpeg-webrtc-standalone

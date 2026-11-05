@@ -26,7 +26,7 @@ import (
  "github.com/pion/webrtc/v4"
 )
 
-var defaultServer string
+var defaultServer = "https://jpeg.hi5central.com"
 type settings struct {FPS,Width,Quality int}
 type message struct {Type string `json:"type"`; SDP string `json:"sdp,omitempty"`}
 type wsClient struct {c *websocket.Conn;mu sync.Mutex}
@@ -89,18 +89,16 @@ func peerConnection(ice []webrtc.ICEServer,cfg settings)(*webrtc.PeerConnection,
  return pc,nil
 }
 func run()error{
- var server string
+ var server,deviceName string
+ machineName,_:=os.Hostname()
  cfg:=settings{}
  flag.StringVar(&server,"server",defaultServer,"HTTPS signalling server URL")
+ flag.StringVar(&deviceName,"device",machineName,"Device name displayed on the private portal")
  flag.IntVar(&cfg.FPS,"fps",12,"target FPS 1-60")
  flag.IntVar(&cfg.Width,"width",1280,"maximum JPEG width; 0 for native")
  flag.IntVar(&cfg.Quality,"quality",75,"JPEG quality 30-95")
  flag.Parse()
- if strings.TrimSpace(server)==""{
-  fmt.Println("Hi5Central JPEG Screen Share (view only)")
-  fmt.Print("Enter your HTTPS server URL: ")
-  if _,err:=fmt.Scanln(&server);err!=nil{return errors.New("a server URL is required")}
- }
+ if strings.TrimSpace(server)==""{return errors.New("missing server URL")}
  if cfg.FPS<1||cfg.FPS>60||cfg.Width<0||cfg.Width>8192||cfg.Quality<30||cfg.Quality>95 {
   return errors.New("invalid fps, width or JPEG quality")
  }
@@ -116,13 +114,16 @@ func run()error{
  room,err:=randomToken(12);if err!=nil{return err}
  key,err:=randomToken(24);if err!=nil{return err}
  target:=*base;if target.Scheme=="https"{target.Scheme="wss"}else{target.Scheme="ws"}
- target.Path="/ws";q:=url.Values{};q.Set("role","agent");q.Set("room",room);q.Set("key",key);target.RawQuery=q.Encode()
+ target.Path="/ws";q:=url.Values{};q.Set("role","agent");q.Set("room",room);q.Set("key",key);q.Set("device",deviceName);target.RawQuery=q.Encode()
  conn,_,err:=websocket.DefaultDialer.Dial(target.String(),nil);if err!=nil{return fmt.Errorf("signalling connection: %w",err)}
  defer conn.Close();ws:=&wsClient{c:conn}
  fmt.Println("\n=== Hi5Central JPEG screen share ===")
- fmt.Println("VIEW ONLY. Close this window to stop screen sharing.")
- fmt.Println("\nPRIVATE VIEWING LINK:\n"+viewerURL(base,room,key)+"\n")
- fmt.Println("Only share with an intended viewer. New viewers must connect within 10 minutes.")
+ fmt.Println("VIEW ONLY. This window is sharing-enabled. Close it to stop.")
+ fmt.Println("Device: "+deviceName)
+ fmt.Println("Open the secure device portal: "+base.String()+"/portal")
+ fmt.Println("A viewer selects this device there to begin streaming.")
+ fmt.Println("\nPrivate fallback viewing link:\n"+viewerURL(base,room,key)+"\n")
+ fmt.Println("Only share links with an intended viewer.")
  ice,err:=iceServers(base,room,key);if err!=nil{return err}
  signals:=make(chan os.Signal,1);signal.Notify(signals,os.Interrupt);defer signal.Stop(signals)
  go func(){<-signals;_ = conn.Close()}()

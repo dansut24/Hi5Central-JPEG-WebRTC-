@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Hi5Central | Live Devices</title>
+<style>
+:root{color-scheme:dark;font:16px/1.5 system-ui,-apple-system,Segoe UI,Arial,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:#0d1320;color:#edf3ff;min-height:100vh}
+header{padding:24px 20px;background:#192338;border-bottom:1px solid #33435d}
+header>div,main{max-width:980px;margin:auto}
+h1{font-size:22px;letter-spacing:-.4px;margin:0 0 4px}
+p{margin:4px 0;color:#b0c0db}
+main{padding:24px 20px}
+section{border:1px solid #34445e;border-radius:16px;background:#172136;padding:20px}
+.toolbar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+h2{font-size:17px;margin:0}
+#status{font-size:13px;color:#a0b6db}
+#devices{display:grid;gap:12px;margin-top:20px}
+.device{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px;border:1px solid #3c4f69;border-radius:12px;background:#10192b}
+.device h3{font-size:16px;margin:0;word-break:break-word}
+.device small{display:block;font-size:13px;color:#a5b9d7;margin-top:3px}
+button{font:inherit;border:0;border-radius:9px;padding:10px 18px;background:#2879e9;color:#fff;font-weight:650;cursor:pointer}
+button:hover{background:#398af8}
+button:disabled{opacity:.5;cursor:not-allowed}
+#message{min-height:28px;margin-top:14px;color:#f2bd77}
+#empty{padding:26px 10px;color:#a5b9d7;text-align:center}
+footer{font-size:13px;color:#a1b4d2;margin-top:18px}
+@media(max-width:520px){.device{align-items:flex-start}.device button{flex-shrink:0}header{padding:20px}}
+</style>
+</head>
+<body>
+<header><div><h1>Hi5Central | Live Devices</h1><p>Portable JPEG WebRTC screen sharing · View only</p></div></header>
+<main>
+<section>
+<div class="toolbar"><h2>Available computers</h2><span id="status" role="status">Connecting…</span></div>
+<div id="devices"><div id="empty">Looking for running screen-sharing applications…</div></div>
+<p id="message" role="alert"></p>
+</section>
+<footer>Run the portable EXE on a Windows computer to make it appear here. Sharing only starts when someone chooses View. Closing the EXE disconnects the session. Devices disappear when they go offline. This portal requires authorisation.</footer>
+</main>
+<script>
+(() => {
+'use strict';
+const target=document.getElementById('devices'),status=document.getElementById('status'),message=document.getElementById('message');
+let busy=false;
+const row = (entry)=>{
+ const item=document.createElement('div');item.className='device';
+ const copy=document.createElement('div'),title=document.createElement('h3'),subtitle=document.createElement('small'),button=document.createElement('button');
+ title.textContent=entry.name;subtitle.textContent=entry.viewing?'Currently being viewed':'Online · Ready to view';
+ button.textContent='View';button.disabled=entry.viewing;
+ button.setAttribute('aria-label','View screen of '+entry.name);
+ button.onclick=async()=>{
+  button.disabled=true;button.textContent='Connecting…';message.textContent='';
+  try{
+   const result=await fetch('/api/portal/watch',{
+    method:'POST',credentials:'same-origin',
+    headers:{'Content-Type':'application/json','X-H5C-Portal':'1'},
+    body:JSON.stringify({room:entry.room})
+   });
+   if(!result.ok)throw Error(result.status===409?'Device is already being viewed.':'Unable to create viewing session ('+result.status+').');
+   const data=await result.json();
+   if(typeof data.url!=='string'||!data.url.startsWith('/?room='))throw Error('Invalid viewing link');
+   window.location.assign(data.url);
+  }catch(err){message.textContent=err.message;button.disabled=false;button.textContent='View'}
+ };
+ copy.append(title,subtitle);item.append(copy,button);return item;
+};
+const refresh=async()=>{
+ if(busy)return;
+ busy=true;
+ try{
+  const response=await fetch('/api/portal/devices',{credentials:'same-origin',cache:'no-store'});
+  if(!response.ok)throw Error('Unable to load devices (HTTP '+response.status+').');
+  const data=await response.json();
+  if(!Array.isArray(data.devices))throw Error('Invalid device list');
+  const previous=document.activeElement?.closest('.device')?.querySelector('h3')?.textContent;
+  target.replaceChildren();
+  if(data.devices.length===0){
+   const empty=document.createElement('div');empty.id='empty';empty.textContent='No computers online. Double-click the portable EXE on a Windows PC.';target.append(empty);
+  }else for(const entry of data.devices){target.append(row(entry))}
+  status.textContent=data.devices.length+' computer'+(data.devices.length===1?'':'s')+' online · Live';
+  if(previous)for(const button of target.querySelectorAll('button'))if(button.getAttribute('aria-label')==='View screen of '+previous){button.focus();break}
+ }catch(err){status.textContent='Connection issue';message.textContent=err.message}
+ busy=false;
+};
+refresh();setInterval(refresh,5000);
+})();
+</script>
+</body></html>

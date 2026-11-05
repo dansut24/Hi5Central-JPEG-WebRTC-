@@ -1,0 +1,37 @@
+name: JPEG WebRTC standalone prototype
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+          cache: false
+      - name: Resolve dependencies
+        run: go mod tidy
+      - name: Test
+        run: go test ./...
+      - name: Build Windows user-mode EXE
+        run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o Hi5-JPEG-ScreenShare.exe ./cmd/agent
+      - name: Build Oracle Linux relays
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o jpeg-relay-linux-amd64 ./cmd/relay
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o jpeg-relay-linux-arm64 ./cmd/relay
+      - name: Package
+        run: |
+          mkdir -p dist/web
+          cp Hi5-JPEG-ScreenShare.exe jpeg-relay-linux-amd64 jpeg-relay-linux-arm64 README.md dist/
+          cp web/index.html dist/web/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hi5-jpeg-webrtc-standalone
+          path: dist/
+          retention-days: 14

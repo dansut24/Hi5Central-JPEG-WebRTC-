@@ -1,0 +1,8 @@
+*.exe
+*.out
+*.test
+dist/
+bin/
+.env
+go.sum
+.DS_Store

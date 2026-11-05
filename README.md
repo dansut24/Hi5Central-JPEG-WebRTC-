@@ -4,10 +4,7 @@ Independent user-mode Windows screen-sharing prototype; not linked to the Hi5Cen
 
 ## One-click Windows sharing
 
-Download the latest green GitHub Actions build and extract `Hi5-JPEG-ScreenShare.exe`.
-Double-click as a normal Windows user, **no administrator rights, installation, service or driver required**.
-The EXE is preconfigured to connect to `https://jpeg.hi5central.com` and registers the current Windows computer name automatically.
-It visibly stays open and can be closed at any time to stop sharing.
+Download and extract the latest successful GitHub Actions ZIP, then double-click **`scripts/Install-User.cmd`**. There is **no INSTALL prompt** and no administrator elevation. The script stages the background EXE in a unique directory under `%TEMP%`, then copies it to the current user's `%LOCALAPPDATA%\Hi5Central\JPEGWebRTC`, registers current-user sign-in startup and starts a **visible system-tray icon**. The EXE connects automatically to `https://jpeg.hi5central.com` and registers the Windows computer name. The local user can Pause or Exit from the tray at any time.
 
 Open **https://jpeg.hi5central.com/portal** in any browser, sign in with the portal credentials configured on the IONOS server, and select the online computer.
 The WebRTC connection and JPEG stream start **only when a viewer clicks View**. The application never captures or transmits frames while merely waiting for a viewer.
@@ -16,7 +13,7 @@ The WebRTC connection and JPEG stream start **only when a viewer clicks View**. 
 
 Portable Windows GDI JPEG capture → encrypted WebRTC DataChannel (P2P or existing IONOS TURN fallback) → browser canvas. The small Go signalling server runs on the existing IONOS VPS behind Caddy wildcard TLS. No public port is exposed by the new Docker container.
 
-The portal lists currently online devices and allows one viewer per device. Viewer access requires HTTP Basic authentication over HTTPS and creates a short-lived, one-device viewing capability. Tokens never appear in the public device list; room names are sanitized. No remote keyboard/mouse commands or unattended access are supported. Screen sharing is an explicit action (launching the visible EXE) and stops on exit.
+The portal lists currently online devices and allows one viewer per device. Viewer access requires HTTP Basic authentication over HTTPS and creates a short-lived, one-device viewing capability. Tokens never appear in the public device list; room names are sanitized. This is unattended, **view-only** support for the signed-in user's desktop: a portal operator can start viewing without an additional approval prompt after installation. No remote keyboard/mouse commands are supported. The local user retains visible sharing status and Pause/Exit controls.
 
 The original private session-link mechanism remains available for testing but its initial connection window expires after 10 minutes. The portal can create new short-lived viewing links for any active computer.
 
@@ -37,6 +34,12 @@ See [deploy/ionos/README.md](deploy/ionos/README.md). Set `PORTAL_PASSWORD` (at 
 
 ## Windows per-user installer and tray
 
-The latest successful GitHub Actions ZIP includes `Hi5-JPEG-ScreenShare-GUI.exe` and the `scripts/` folder. Extract the entire ZIP, then double-click `scripts/Install-User.cmd` and type **INSTALL** to consent to unattended viewing of the signed-in desktop. The app copies to the installing user's `%LOCALAPPDATA%\\Hi5Central\\JPEGWebRTC`, starts a visible notification-area icon, and registers a **current-user-only** Windows Run key to start at each login. It needs no elevation. You can pause/resume or exit from the icon at any time, and use `scripts/uninstall-user.ps1` to remove auto-start.
+The ZIP contains `Hi5-JPEG-ScreenShare-GUI.exe` and a `scripts/` folder.
 
-The background GUI executable is built with the Windows GUI subsystem (no console) and writes diagnostics to `%LOCALAPPDATA%\\Hi5Central\\JPEGWebRTC\\agent.log`. The icon clearly indicates when remote screen viewing is active. The user-mode agent does not run at the Windows login screen or before any user has logged in. It reconnects while the tray is open after transient failures. Only deploy on computers with informed consent from the desktop user and authorisation for attended/unattended support.
+1. Extract the complete ZIP on Windows.
+2. Double-click `scripts/Install-User.cmd`. It stages the EXE and scripts in a temporary folder, copies them into the installing user's `%LOCALAPPDATA%\\Hi5Central\\JPEGWebRTC`, and starts the tray app without an `INSTALL` prompt or elevation.
+3. The agent registers itself under the Windows computer name. Sign into the protected portal at `https://jpeg.hi5central.com/portal` to see online computers and click **Start viewing**.
+4. The tray icon indicates ready/streaming state. The local user can Pause, Resume, or Exit sharing. The operator can stop the active viewer from the portal.
+5. To remove auto-start and files, run the installed `uninstall-user.ps1` from the user profile folder.
+
+The background EXE has no console and writes diagnostics to `agent.log` in the same directory. It launches on Windows sign-in for the installing user. This user-mode agent **does not run at the Windows sign-in screen**, and a computer without a signed-in user cannot be streamed. Deployment requires organisational authorisation and informed consent. The test portal needs its protected IONOS service activated before portal viewing can work.

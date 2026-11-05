@@ -25,6 +25,20 @@ jobs:
           node --check /tmp/hi5-jpeg-viewer.js
           sed -n '/<script>/,/<\/script>/p' web/portal.html | sed '1d;$d' > /tmp/hi5-jpeg-portal.js
           node --check /tmp/hi5-jpeg-portal.js
+      - name: Validate Windows installation scripts
+        shell: pwsh
+        run: |
+          $bad = $false
+          foreach ($file in Get-ChildItem scripts -Filter '*.ps1') {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            foreach ($issue in $errors) {
+              Write-Host "::error file=$($file.FullName)::$issue"
+              $bad = $true
+            }
+          }
+          if ($bad) { exit 1 }
       - name: Build portable Windows EXE
         run: |
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o Hi5-JPEG-ScreenShare.exe ./cmd/agent
